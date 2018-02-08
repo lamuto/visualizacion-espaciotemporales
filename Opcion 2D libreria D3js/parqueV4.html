@@ -1,0 +1,568 @@
+<!DOCTYPE html>  
+<html lang="es">  
+	<head>  
+		<meta charset="utf-8">  
+		
+		<script src="https://d3js.org/d3.v4.min.js"></script>
+	
+		<script src="jquery-3.3.1.min.js"></script>
+		<script src="jquery-ui_1.12.1.min.js"></script>
+		<script src="jQRangeSlider-withRuler-min.js"></script>
+		
+		<link   rel="stylesheet" href="iThing.css"> 
+		
+	</head>
+	<body>
+	
+	<table border=1 width=100%>
+		<tr>
+			<td colspan=3>
+				<div id="sli-container" ></div>
+			</td>
+		</tr>
+		<tr>
+			
+			<td id='graf' width=600>
+				<div id="vis-container"></div>
+			</td>
+			
+			<td width=200 style="vertical-align:top">
+				<div class="det-container" style="border: 2px solid black; height: 150px"></div>
+				<input type='text' id='idBuscar' size='16'><button type='button' onclick='searchSelect()'>Buscar</button>
+				<select class="lis-personas" id='selectP' size="24" style="width: 200px" multiple onchange="selectChange(0)">
+			</td>
+			
+			<td style="vertical-align:top">
+			<h4>Instrucciones:</h4>
+			   <ul>
+					<li>
+					El slider superior filtrará los datos entre la hora inferior y superior.
+					</li>
+					<li>
+					Selecciona uno o varios id's de la lista para graficar sus rutas.
+					</li>
+					<li>
+					Las rutas muestran los puntos <img src='puntos.png' height='10px'> para (inicio, estadías, punto presente).
+					</li>
+					<li>
+					Pasa el mouse sobre un punto para mostrar su información.
+					</li>
+					<li>
+					Utiliza el clic izquierdo del mouse para mover el mapa.
+					</li>
+					<li>
+					Utiliza la rueda del mouse para utilizar zoom en el mapa.
+					</li>
+				<ul>
+			
+				<div id="datos" style="display:block;" >
+				    <br><br>
+					<center>DATOS PERSONALES</center></br>
+					Nombre:</br> <input align="right" id="nombres" type="text"/></br>
+					Apellidos: </br><input id="apellidos" type="text"/></br>
+					Edad: </br><input id="edad" type="text"/></br>
+					Sexo:</br>
+					<input type="radio" id="sexo" name="genero" value="m" > Masculino
+					<input type="radio" id="sexo" name="genero" value="f"> Femenino</br></br>
+					<center><button type="button" onclick="empezar()">Empezar evaluación</input></center>
+				</div>
+				
+				<div id='preguntas' style="display:none;">
+					</br>
+					<center>Cuestionario</center></br>
+					<p class='pregunta'>p</p>
+					</br>
+					<input type="text" class="p1" id='p1'></br>
+					</br>
+					<center><button type="button" onclick="quest()">Siguientes</input></center>
+				</div>
+				
+				<div id='com' style="display:none;">
+					</br>
+					Comentarios:
+					</br>
+					<textarea rows="4" cols="50" id='come'></textarea>
+					
+					<center><button type="button" onclick="guardar()">Terminar</input></center>
+				</div>
+				
+				
+				
+			</td>
+			
+			
+		</tr>
+	</table>
+	
+	
+<script>
+'use strict';
+//###################################################################
+//#####                       Arrays                          #######
+//###################################################################	
+var datos         = []; //guarda los datos del arcivo csv
+var tiempos       = []; //guarda las distintas HH:MM
+var puntos        = []; //guarda los puntos a dibujar en x hora
+var seleccionados = []; //almacena los puntos que muestra las rutas
+
+//###################################################################
+//#####                       Variables                       #######
+//###################################################################
+
+var h        = 600;         //height (alto)
+var w        = 600;         //width  (ancho)
+var m        = 25;          //margin (margen)
+var xLon     = w - (2* m);  //Longitud del eje x
+var	yLon     = h - (2* m);  //Longitud del eje y
+var	imgUrl   = "ParkMap.jpg";
+var	minT;   
+var	maxT;
+
+//###################################################################
+//#####                    Contenedores                       #######
+//###################################################################
+var svg         = d3.select('#vis-container').append('svg')
+                    .attr('width', w).attr('height', h)
+                    .style("pointer-events", "all").call(d3.zoom()
+					.scaleExtent([1 / 2, 4]).on("zoom", zoomed));;
+var	g           = svg.append('g').attr('transform', 'translate('+ m +' '+ m + ')');
+var mapa        = g.append('image').attr('class','map');	
+var ejeX        = g.append('g').attr('class','x-axis');
+var ejeY        = g.append('g').attr('class','y-axis');
+var rutas       = g.append('g').attr('class','path');  
+var circulos    = g.append('g').attr('class','circles');
+
+//###################################################################
+//#####                     Escalas                           #######
+//###################################################################
+
+var x     = d3.scaleLinear().domain([0, 100]).range([0, xLon]);
+var y     = d3.scaleLinear().domain([0, 100]).range([yLon, 0]);
+var color = d3.scaleOrdinal(d3.schemeCategory10);
+
+//###################################################################
+//#####                      Objetos                          #######
+//###################################################################
+
+var linea   = d3.line().curve(d3.curveCatmullRom)
+                .x(function(d){return x(d.x);}).y(function(d){return y(d.y);});
+var lista   = d3.select('select.lis-personas');
+var detalle = d3.select('div.det-container');
+
+//###################################################################
+//#####                       Funciones                       #######
+//###################################################################
+
+function renderWorkArea(){
+	//Mapa	
+	mapa.attr('xlink:href', imgUrl)
+		.attr('x',0)
+		.attr('y',0)
+		.attr('width',xLon)
+		.attr('height',yLon);	
+	//Eje x		
+	ejeX.attr('transform','translate('+0+','+yLon+')')
+		.call(d3.axisBottom(x));
+	//rejillas X	
+	d3.selectAll('g.x-axis g.tick').append("line")
+		.attr('class','grid-line')
+		.attr("x1", 0) 
+		.attr("y1", 0)
+		.attr("x2", 0)
+		.attr("y2", -xLon)
+		.style('stroke', 'black')
+		.style('stroke-opacity', 0.2);	
+	//Eje y		
+	ejeY.call(d3.axisLeft(y));
+	//rejillas y	
+	d3.selectAll('g.y-axis g.tick').append("line")
+		.attr('class','grid-line')
+		.attr("x1", 0) 
+		.attr("y1", 0)
+		.attr("x2", yLon)
+		.attr("y2", 0)
+		.style('stroke', 'black')
+		.style('stroke-opacity', 0.2);					
+		
+}	
+
+
+function renderSlider(){
+		$("#sli-container").rangeSlider({
+			bounds:{min: 0, max: tiempos.length -1 },
+			defaultValues:{min: tiempos.length * 0.2 , max: tiempos.length * 0.4},
+			formatter: function(val){
+				return tiempos[val];
+			},
+			step: 1,
+			scales: [
+			    // Escala principal
+				{
+					first: function(val){ return val; },
+					next: function(val){ return val + 30; },
+					stop: function(val){ return false; },
+					label: function(val){ return tiempos[val].substring(11,16);},
+					format: function(tickContainer, tickStart, tickEnd){ 
+						tickContainer.addClass("myCustomClass");
+					}
+				},
+				// Escala secundaria
+				{
+					first: function(val){ return val; },
+					next: function(val){  return val + 1; },
+					stop: function(val){ return false; },
+					label: function(){ return null; }
+				}
+			]
+						 
+		});
+		$("#sli-container").bind("valuesChanged", sliderChange);			
+}
+
+function loadSelect(){
+ var subTiempo = tiempos.slice(minT,maxT);
+ puntos = d3.nest()
+               .key(function(d) { return d.id; })
+               .rollup(function(v) { return {
+           			Timestamp:  v[v.length-1].Timestamp,
+					x: v[v.length-1].x,
+					y: v[v.length-1].y,
+					type: v[v.length-1].type
+				}; })
+               .entries(datos.filter(function(d) {return contains(subTiempo, d.Timestamp)}));
+ //limpiamos el selecctor y mostramos los nuevos id's
+
+ d3.selectAll('option').remove();
+
+ lista.selectAll('option').data(puntos).enter()
+	  .append('option')
+	  .text(function (d) { return d.key; });
+
+ //dibujamos los puntos
+ //renderData();
+}
+
+function renderData(){
+    //removemos los puntos anteriores
+	d3.selectAll('circle.dot').remove();	
+	//Dibujamos los nuevos puntos	
+	circulos.selectAll("circle")
+	    .data(puntos)
+		.enter()
+		.append("circle")
+			.attr("class", "dot")
+			.attr("r", 3)
+			.attr("cx", function (d) { return x(d.value.x)})
+			.attr("cy", function (d) { return y(d.value.y)})
+		    .style("fill", "skyblue")
+			.style("stroke","blue")
+			.on("mouseover", mouseOver)
+			.on("mouseout", mouseOut);	
+}
+
+function mouseOver(d) { 
+	//aumentamos el tamaño y cambiamos de tamaño
+
+	if(d3.select(this).style('fill')=='skyblue')
+	{ d3.select(this).attr('r', 6).style('stroke','black').style('fill','orange'); }
+	else
+	{ d3.select(this).attr('r', 6);}
+    //mostramos los detalles
+	detalle.html(JSON.stringify(d)
+      .replace(/([{}])/g, '')
+	  .replace(/"/g,' ')
+	  .replace(/value :/g,'')
+      //.replace(/(.+?):/g, '<strong style="width: 100px; display: inline-block">$1 : </strong> ')
+      .replace(/,/g, '<br>'));	
+}
+
+function mouseOut(d) {
+	//volvemos al tamaño y colores normales
+	
+	if(d3.select(this).style('fill')=='orange')
+	{ d3.select(this).attr("r", 3).style('stroke','blue').style('fill','skyblue'); }
+	else
+	{ d3.select(this).attr('r', 3);}
+    //ya no mostramos los detalles del punto
+    detalle.text('');
+}
+
+
+function contains(arr, element) {
+    for (var i = 0; i < arr.length; i++) {
+		if (arr[i] === element) {
+			return true;
+		}
+	}
+    return false;
+}
+
+
+
+function sliderChange(e,data){
+	minT = data.values.min;
+	maxT = data.values.max;
+	d3.selectAll("path.ruta , circle.inicio , circle.estadia , circle.dot").remove();	
+	loadSelect();
+}
+
+function searchSelect(){
+    var element=document.getElementById("selectP");
+	var buscar=document.getElementById("idBuscar").value;
+	var flat=0;
+	// recorremos todos los valores del select
+	for(var i=0;i<element.options.length;i++)
+	{
+		if(element.options[i].text==buscar)
+		{
+			// seleccionamos el valor que coincide
+			element.options[i].selected=true;
+			selectChange();
+			svg.append("text").attr('x',50).attr('y',50).attr('fill','red')
+			   .attr('font-size',20).attr('stroke','blue')
+			   .text('Seleccionado').transition().duration(2000).remove();
+			flat=1;
+			break;
+		}
+	}
+	if(flat==0) {
+	svg.append("text").attr('x',50).attr('y',50).attr('fill','red')
+			   .attr('font-size',20).attr('stroke','blue')
+			   .text('No existe').transition().duration(2000).remove();
+	}
+}
+
+function zoomed() {
+  g.attr("transform", d3.event.transform);
+}
+
+function selectChange(opt){
+
+    var element=document.getElementById("selectP");
+
+	seleccionados=[];
+
+    for (var i = 0; i < element.options.length; i++) 
+    {
+		if (element.options[i].selected) {
+			seleccionados.push(element.options[i].value);
+		}
+   		
+    }
+
+    //borramos puntos y rutas
+	d3.selectAll("path.ruta , circle.inicio , circle.estadia , circle.dot").remove();
+	//obtenemos los tiempos entre minT y maxT
+	var subTiempo=tiempos.slice(minT,maxT+1);
+	//para cada punto dentro de la selección dibujamos ruta, punto de inicio y estadias 
+    var i=0;	
+	
+	var ingreso=[];
+	var p1=[];
+	var p2=[];
+	seleccionados.forEach(obj => {
+	  //por cada id obtenemos el recorrido completo
+	  const recorrido = datos.filter( function(d) { return d.id == +obj && contains(subTiempo,d.Timestamp) ;});
+      //dentro del recorrido obtenemos los puntos de check-in
+	  var ingresos  = recorrido.filter(function(d) {return d.type="check-in"});
+	 
+      //vemos si alguno de los check-in son mas de 2 min, los consideramos estadias
+	  for(var j=1; j< ingresos.length;j++){
+	    var diferencia= tiempos.indexOf(ingresos[(j)].Timestamp)-tiempos.indexOf(ingresos[j-1].Timestamp);
+	    if(diferencia>2)
+	    {ingreso.push({id:ingresos[j].id, x: ingresos[j].x, y: ingresos[j].y, Timestamp:ingresos[j-1].Timestamp, Permanencia: diferencia+" minutos"});}
+	  }
+	  
+      //dibujamos las rutas
+	  rutas.append("path")
+		.attr("class","ruta")
+		.attr("d",linea(recorrido))
+		.attr("stroke", function(){ if(i<20){i++;} else {i=0}; return color(i);})
+        .attr("stroke-width", 4)
+		.attr("stroke-opacity",0.6)
+        .attr("fill", "transparent");
+	  //dibujamos el inicio de la ruta	 
+	  p1.push(recorrido[0]);
+      p2.push(recorrido[recorrido.length-1]);
+
+	
+			
+	}); 	
+      circulos.selectAll("circle.inicio").data(p1).enter()
+	    .append("circle")
+		.attr("class","inicio")
+		.attr("cx",function(d) {return x(d.x);})
+		.attr("cy",function(d) {return y(d.y);})
+		.attr("r",3)
+		.style("fill", "red")
+		.style("stroke","black")
+		.on("mouseover", mouseOver)
+	    .on("mouseout", mouseOut);
+	
+      //dibujamos las paradas si es que hubo
+	
+	  circulos.selectAll("circle.estadia").data(ingreso).enter()
+	    .append("circle")
+		.attr("class", "estadia")
+		.attr("r", 3)
+		.attr("cx", function(d) { return x(d.x) ; })
+		.attr("cy", function(d) { return y(d.y) ; })
+		.style("fill", "lime")
+		.style("stroke","black")
+		.on("mouseover", mouseOver)
+	    .on("mouseout", mouseOut);
+	  //circulo donde se encuentra actualmente
+	  
+	  
+
+
+	  circulos.selectAll("circle.dot").data(p2).enter()
+		.append("circle")
+			.attr("class", "dot")
+			.attr("r", 3)
+			.attr("cx", function (d) { return x(d.x)})
+			.attr("cy", function (d) { return y(d.y)})
+		    .style("fill", "skyblue")
+			.style("stroke","blue")
+			.on("mouseover", mouseOver)
+			.on("mouseout", mouseOut);	
+}
+//###################################################################
+//#####                       Inicio                          #######
+//###################################################################
+
+//dibuja el área de trabajo
+renderWorkArea();
+
+//carga los datos
+d3.csv("park-movement-Fri-reduced.csv", function(error, dataRow) {
+	if (error) throw console.log(error);
+    dataRow.forEach(function(d) {d.id = +d.id; d.x  = +d.x; d.y  = +d.y;});
+	datos = dataRow;
+	tiempos = d3.map(datos, function(d){return d.Timestamp;}).keys();
+	minT= tiempos.length * 0.2;
+	maxT= tiempos.length * 0.4;
+	  renderSlider();
+	  loadSelect();
+});	
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+//###################################################################
+//#####                Sección preguntas                      #######
+//###################################################################
+	
+	var preguntas=['¿En qué lugar se encontraba la persona con id 1482663 a las 9:00? ',
+					'¿En qué lugar se encontraba la persona con id 1772261 a las 9:30? ',
+                    'En el horario de 8:30 a 8:45 seleccione los id 1932928 y 1482663 ¿en qué punto se atracción se encontraron?',
+					'En el horario de 8:30 a 8:45 seleccione los id 835642 y 544439 ¿se cruzaron en algún punto? ',
+					'¿Qué lugares visitó la segunda persona con id 766528? ',
+					'¿Por qué entrada ingresó la persona con id 398396? ',
+					'Seleccione las personas con id 2022703 y 1700834 ¿en qué atraccion estuvieron en el mismo horario?',
+					'Seleccione las personas con id 1547860 y 1269504 ¿cuál de los 2 entró primero al parque? '
+	];
+	
+	var milisegundos=0;
+	var control;
+	var texto=[];
+	var nombre;
+	var apellidos;
+	var min=0;
+	var max=1;
+	var cat=1;
+	var pregunta;
+	
+	function guardar(){
+	 var come = document.getElementById('come').value;
+	 texto.push(come+" \n");
+	 document.getElementById('come').value='';
+	 var contenidoEnBlob = new Blob(texto, {
+        type: 'text/plain'
+    });
+
+    var nombreArchivo = apellidos+" "+nombres+" 2D.txt";
+	var reader = new FileReader();
+    reader.onload = function (event) {
+        var save = document.createElement('a');
+        save.href = event.target.result;
+        save.target = '_blank';
+        save.download = nombreArchivo || 'archivo.dat';
+        var clicEvent = new MouseEvent('click', {
+            'view': window,
+                'bubbles': true,
+                'cancelable': true
+        });
+        save.dispatchEvent(clicEvent);
+        (window.URL || window.webkitURL).revokeObjectURL(save.href);
+    };
+    reader.readAsDataURL(contenidoEnBlob);
+	
+	}
+
+	function aleatorio(mi, ma) {
+     return Math.round(Math.random() * (ma - mi) + mi);
+   }
+	function empezar(){
+		nombres =document.getElementById("nombres").value;
+		apellidos =document.getElementById("apellidos").value;
+		var edad=document.getElementById("edad").value;
+		var sexo=document.querySelector('input[name="genero"]:checked').value;
+	
+		texto.push(nombres+", "+apellidos+", "+edad+" ,"+sexo+" \n");
+
+		//limpio los datos
+		document.getElementById("nombres").value="";
+		document.getElementById("apellidos").value="";
+		document.getElementById("edad").value="";
+		//*****************
+		var dat        = document.getElementById('datos');
+        var divPreguntas = document.getElementById('preguntas');
+		pregunta     = d3.select('p.pregunta');
+	    console.log(pregunta);
+		dat.style.display='none';
+		divPreguntas.style.display='block';
+		pregunta.text(preguntas[aleatorio(min,max)]);
+		min +=2;
+		max +=2;
+		control=setInterval(function(){ milisegundos+=10; }, 10);
+	}
+	
+	
+	function   quest(){
+	 clearInterval(control);
+	 var timeP=milisegundos;
+	 var p1 = document.getElementById('p1').value;
+	 p1.replace(',','|')
+     texto.push(cat+","+ p1+"," +timeP+" \n");
+	 console.log(cat+","+ p1+"," +timeP+"\n");
+	 //limpio los datos
+	 document.getElementById('p1').value="";
+	 pregunta.text(preguntas[aleatorio(min,max)]);
+	 min +=2;
+	 max +=2;
+	 cat++;
+	 if(cat == 5){
+	    d3.select("div#preguntas").style("display","none");
+		d3.select("div#com").style("display","block");
+	 }
+	 else{
+	   milisegundos=0;
+	  control=setInterval(function(){ milisegundos+=10; }, 10);
+	 }
+
+	}
+	
+	</script>
+	</body>
+</html>

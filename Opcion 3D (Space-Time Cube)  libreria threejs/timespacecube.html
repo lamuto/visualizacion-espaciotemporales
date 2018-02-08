@@ -1,0 +1,599 @@
+<!DOCTYPE html>  
+<html lang="es">  
+<head>
+<meta charset="utf-8">  
+<title>Time Space Cube</title>
+
+<script src="three.min.js"></script>
+<script src="OrbitControls.js"></script>
+<script src="THREE.MeshLine.js"></script>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+
+<script src="jquery-3.3.1.min.js"></script>
+		<script src="jquery-ui_1.12.1.min.js"></script>
+		<script src="jQRangeSlider-withRuler-min.js"></script>
+		
+		<link   rel="stylesheet" href="iThing.css"> 
+
+</head>
+<body>
+<table border=1 width='100%'>
+	<tr>
+		<td colspan=3>
+			<div id="sli-container" ></div>
+		</td>
+	</tr>
+	<tr>
+		<td id="graph" width=550>
+		
+		</td>
+		<td width=200 style="vertical-align:top">
+				<div class="det-container" style="border: 2px solid black; height: 100px"></div>
+				<input type='text' id='idBuscar' size='18'><button type='button' onclick='buscarSelect()'>Buscar</button>
+				<select class="lis-personas" id='personas' size="24" style="width: 200px" multiple onchange="mostrar(this)">
+		</td>
+		
+
+		<td valign="top">
+		<h4>Instruciones:</h4>
+		<ul>
+		    <li>
+				El slider superior filtrará los datos entre la hora inferior y superior.
+			</li>
+			<li>
+				Selecciona uno o varios id's de la lista para graficar sus rutas.
+			</li>
+			<li>
+				Las rutas muestran los puntos <img src='puntos.png' height='10px'> para (inicio, estadías, punto presente).
+			</li>	
+			<li>
+				Utiliza las teclas ▲ ▼ ► ◄ o click derecho para centrar el gráfico.
+			</li>
+			<li>
+				Utiliza el clic izquierdo del mouse para rotar el cubo.
+			</li>
+			<li>
+				Utiliza la rueda del mouse para acercar y alejar la cámara.
+			</li>
+		<ul>
+		       <div id="datos" style="display:block;" >
+				    <br><br>
+					<center>DATOS PERSONALES</center></br>
+					Nombre:</br> <input align="right" id="nombres" type="text"/></br>
+					Apellidos: </br><input id="apellidos" type="text"/></br>
+					Edad: </br><input id="edad" type="text"/></br>
+					Sexo:</br>
+					<input type="radio" id="sexo" name="genero" value="m" > Masculino
+					<input type="radio" id="sexo" name="genero" value="f"> Femenino</br></br>
+					<center><button type="button" onclick="empezar()">Empezar evaluación</input></center>
+				</div>
+				
+				<div id='preguntas' style="display:none;">
+					</br>
+					<center>Cuestionario</center></br>
+					<p class='pregunta'>p</p>
+					</br>
+					<input type="text" class="p1" id='p1'></br>
+					</br>
+					<center><button type="button" onclick="quest()">Siguientes</input></center>
+				</div>
+				
+				<div id='com' style="display:none;">
+					</br>
+					Comentarios:
+					</br>
+					<textarea rows="4" cols="50" id='come'></textarea>
+					
+					<center><button type="button" onclick="guardar()">Terminar</input></center>
+				</div>
+				
+		</td>
+	</tr>
+</table>
+<script>
+
+//************************************************
+//*********       Variables     ******************
+//************************************************
+var width      = 550;
+var height     = 550;
+var widthCube  = 100;
+var heightCube = 100;
+var mid        = widthCube/2;
+var divisions  = 10;
+var near       = 1;
+var far        = 1000;
+var iColor     = 0;
+var minT;
+var maxT;
+
+//************************************************
+//*********       Texturas      ******************
+//************************************************
+
+var mapa       = new THREE.MeshBasicMaterial( {map: new THREE.TextureLoader().load("ParkMap.jpg"), side: THREE.DoubleSide});
+//var mapaMovil  = new THREE.MeshBasicMaterial( {map: new THREE.TextureLoader().load("ParkMap.png"), opacity: 0.8 , transparent: true, side: THREE.DoubleSide});
+var escala     = new THREE.MeshBasicMaterial( {map: new THREE.TextureLoader().load("escala.png"), transparent:true, side: THREE.DoubleSide});
+var azul       = new THREE.LineBasicMaterial( { color: new THREE.Color( 'blue'  )} );
+var gris       = new THREE.LineBasicMaterial( { color: new THREE.Color( 'gray'  )} );
+var rojo       = new THREE.LineBasicMaterial( { color: new THREE.Color( 'red'   )} );
+var verde      = new THREE.LineBasicMaterial( { color: new THREE.Color( 'green' )} );
+//************************************************
+//*********       Formas        ******************
+//************************************************
+var lineaX     = new THREE.Geometry();
+lineaX.vertices.push( new THREE.Vector3(-mid, 0, 0) , new THREE.Vector3(mid, 0, 0 ) );
+var lineaY     = new THREE.Geometry();
+lineaY.vertices.push( new THREE.Vector3( 0,-mid, 0) , new THREE.Vector3( 0,mid, 0 ) );
+var lineaZ     = new THREE.Geometry();
+lineaZ.vertices.push( new THREE.Vector3( 0, 0, 0) , new THREE.Vector3( 0, 0, widthCube) );
+var plano      = new THREE.PlaneGeometry(widthCube, heightCube) ;
+//var planoMovil = new THREE.PlaneGeometry(widthCube +10, heightCube+10) ;
+var planoE     = new THREE.PlaneGeometry(30, heightCube+8) ;
+
+//************************************************
+//*********       Objetos       ******************
+//************************************************
+var scene         = new THREE.Scene();
+//var camera        = new THREE.PerspectiveCamera(angulo,width/height,near,far);
+var camera        = new THREE.OrthographicCamera(width / - 2, width / 2, height / 2, height / - 2,near,far);
+var renderer      = new THREE.WebGLRenderer();
+var controls      = new THREE.OrbitControls(camera, renderer.domElement);
+var grid          = new THREE.GridHelper(widthCube,divisions, azul, gris);
+var timeSpaceCube = new THREE.Mesh(plano, mapa);
+//var planoGrid     = new THREE.Mesh(planoMovil,mapaMovil);
+var planoEscala   = new THREE.Mesh(planoE,escala);
+var loader        = new THREE.FontLoader();
+//var clock         = new THREE.Clock();
+
+var detalle = d3.select('div.det-container');
+var lista   = d3.select('select.lis-personas');
+//************************************************
+//*********       Datos         ******************
+//************************************************
+
+var datos=[];
+var tiempos=[];
+var ids=[];
+var seleccionados=[];
+
+//************************************************
+//*********       Escalas        ******************
+//************************************************
+
+var x = d3.scaleLinear().domain([0,100]).range([-mid,mid]);
+var y = d3.scaleLinear().domain([0,100]).range([mid,-mid]);
+var z = d3.scaleLinear().range([0,100]);
+var colorScale = d3.scaleOrdinal(d3.schemeCategory20);
+//************************************************
+//*********       Funciones     ******************
+//************************************************
+
+function renderWorkArea(){
+renderer.setSize(width, height);
+
+document.getElementById("graph").appendChild(renderer.domElement);
+renderer.domElement.setAttribute("tabIndex", "0");
+renderer.domElement.focus();
+
+	
+
+timeSpaceCube.rotation.x=Math.PI * -90 / 180;
+timeSpaceCube.position.y -= 0.1;
+
+agregarLineaCubo(lineaZ,-mid,-mid,0);
+//agregarLineaCubo(lineaZ,-mid, mid,0);
+agregarLineaCubo(lineaZ, mid,-mid,0);
+agregarLineaCubo(lineaZ, mid, mid,0);
+agregarLineaCubo(lineaX,   0,-mid, heightCube);
+agregarLineaCubo(lineaX,   0, mid, heightCube);
+agregarLineaCubo(lineaY, mid,   0, heightCube);
+agregarLineaCubo(lineaY,-mid,   0, heightCube);
+
+
+//planoGrid.rotation.x=Math.PI * -90 / 180;
+//planoGrid.position.y += 100;
+
+planoEscala.position.set(-mid-14,mid-1,-mid);
+
+scene.add(planoEscala);
+
+
+//scene.add(planoGrid);
+scene.add(grid);			
+scene.add(timeSpaceCube);
+
+
+var axesHelper = new THREE.AxesHelper( widthCube  );
+axesHelper.position.set(-mid,0.5,-mid);
+scene.add( axesHelper );
+
+loader.load( 'droid_sans_regular.typeface.json', function ( font ) {
+
+	var textX = new THREE.TextGeometry( 'X norte', {
+		font: font,
+		size: 10,
+		height: 1,
+		bevelEnabled: false
+	} );
+	
+	var textY = new THREE.TextGeometry( 'Y', {
+		font: font,
+		size: 10,
+		height: 1,
+		bevelEnabled: false
+	} );
+	var textT = new THREE.TextGeometry( 'T', {
+		font: font,
+		size: 10,
+		height: 1,
+		bevelEnabled: false
+	} );
+	agregarTexto(textX,rojo,-20,1,-mid);
+	agregarTexto(textY,azul,-mid -4,1,0);
+	agregarTexto(textT,verde,-mid -4 ,100,-mid);
+	
+} );
+
+renderer.setClearColor(new THREE.Color('silver'), 1);		
+camera.position.z = 100; 
+camera.position.y = 50; 
+camera.lookAt(timeSpaceCube.position);
+}
+renderWorkArea();
+d3.csv("park-movement-Fri-reduced.csv", function(error, dataRow) {
+	  if (error) throw console.log(error);
+
+	  // format the data
+	  dataRow.forEach(function(d) {
+		  d.id = +d.id;
+		  d.x  = +d.x;
+		  d.y  = +d.y;
+	  });
+		datos = dataRow;
+		tiempos = d3.map(datos, function(d){return d.Timestamp;}).keys();
+	    z.domain([0,tiempos.length-1]);
+
+	/*
+		ids= d3.map(datos, function(d){return d.id;}).keys();
+		
+		var list =document.getElementById("personas");
+		
+	    for(i=0;i<ids.length;i++)
+		{
+			var option = document.createElement("option");
+			option.text = ids[i];
+			list.add(option);
+		}
+	*/	
+	minT= tiempos.length * 0.2;
+	maxT= tiempos.length * 0.4;
+	  renderSlider();
+	  llenarPersonas();
+      console.log(scene);
+});
+render();
+controls.update();
+
+function agregarTexto(geometria, material, x,y,z){
+	var txtMesh = new THREE.Mesh(geometria,material);
+	txtMesh.position.set(x,y,z);
+	scene.add(txtMesh);
+}
+
+
+function llenarPersonas(){
+ var subTiempo = tiempos.slice(minT,maxT);
+ puntos = d3.nest()
+               .key(function(d) { return d.id; })
+               .rollup(function(v) { return {
+           			Timestamp:  v[v.length-1].Timestamp,
+					x: v[v.length-1].x,
+					y: v[v.length-1].y,
+					type: v[v.length-1].type
+				}; })
+               .entries(datos.filter(function(d) {return contains(subTiempo, d.Timestamp)}));
+ //limpiamos el selecctor y mostramos los nuevos id's
+
+ d3.selectAll('option').remove();
+
+ lista.selectAll('option').data(puntos).enter()
+	  .append('option')
+	  .text(function (d) { return d.key; });
+
+ //dibujamos los puntos
+
+}
+
+
+function sliderChange(e,data){
+	minT = data.values.min;
+	maxT = data.values.max;
+
+   //eliminar todos las trayectorias
+	 var sup = scene.children.length;
+	for(var j=sup ; j>=7 ; j--){
+	  scene.remove(scene.children[j]);
+	}
+	
+	llenarPersonas();
+}
+
+function contains(arr, element) {
+    for (var i = 0; i < arr.length; i++) {
+		if (arr[i] === element) {
+			return true;
+		}
+	}
+    return false;
+}
+
+function buscarSelect(){
+    var element=document.getElementById("personas");
+	var buscar=document.getElementById("idBuscar").value;
+	var flat=0;
+	// recorremos todos los valores del select
+	for(var i=0;i<element.options.length;i++)
+	{
+		if(element.options[i].text==buscar)
+		{
+			// seleccionamos el valor que coincide
+			element.options[i].selected=true;
+			mostrar();
+			detalle.append('p').text('Seleccionado').transition().duration(2000).remove();
+			flat=1;
+			break;
+		}
+	}
+	if(flat==0) {
+	detalle.append('p').text('No existe').transition().duration(2000).remove();
+	}
+}
+
+function agregarLineaCubo(linea, x,y,z){
+	var line = new THREE.Line(linea, rojo);
+	line.position.set(x,y,z);
+	timeSpaceCube.add(line);
+}
+
+function render() {
+	requestAnimationFrame(render);
+	controls.update();
+	renderer.render(scene, camera);
+
+};
+/*
+var planeZ = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+var mv = new THREE.Vector3(
+    (event.clientX / window.innerWidth) * 2 - 1,
+    -(event.clientY / window.innerHeight) * 2 + 1,
+    0.5 );
+var raycaster = projector.pickingRay(mv, camera);
+var pos = raycaster.ray.intersectPlane(planeZ);
+console.log("x: " + pos.x + ", y: " + pos.y);
+
+*/
+
+function mostrar(){
+    var element=document.getElementById("personas");
+
+    seleccionados=[];
+    for (i = 0; i < element.options.length; i++) 
+    {
+		if (element.options[i].selected) {
+			seleccionados.push(element.options[i].value);
+		}	
+    }
+    //eliminar todos las trayectorias
+	
+//eliminar todos las trayectorias
+	 var sup = scene.children.length;
+	for(var j=sup ; j>=7 ; j--){
+	  scene.remove(scene.children[j]);
+	}
+
+
+    
+	var subTiempo=tiempos.slice(minT,maxT+1);
+ 	for(i=0;i<seleccionados.length;i++)
+	{
+		iColor++;
+		if(iColor==20) iColor=0;
+			
+			var ejemplo= datos.filter(function (d){return d.id==seleccionados[i] && contains(subTiempo,d.Timestamp)});
+			geometria=new THREE.Geometry();
+			ejemplo.forEach(d=>{
+				geometria.vertices.push(new THREE.Vector3(x(d.x),z(tiempos.indexOf(d.Timestamp)),y(d.y)));
+			});
+		
+	  var ingresos  = ejemplo.filter(function(d) {return d.type="check-in"});
+	  var ingreso=[];
+      //vemos si alguno de los check-in son mas de 2 min, los consideramos estadias
+	  for(var j=1; j< ingresos.length;j++){
+	    var diferencia= tiempos.indexOf(ingresos[(j)].Timestamp)-tiempos.indexOf(ingresos[j-1].Timestamp);
+	    if(diferencia>2)
+	    {ingreso.push({id:ingresos[j].id, x: ingresos[j].x, y: ingresos[j].y, Timestamp:ingresos[j].Timestamp, Permanencia: diferencia+" minutos"});}
+	  }
+		
+		
+			//var color  = new THREE.LineBasicMaterial( { color: new THREE.Color( colorScale(iColor)), linewidth:10 } );
+			var color = new MeshLineMaterial({ color: new THREE.Color( colorScale(iColor)), lineWidth:0.01, transparent: true, opacity: 0.7});
+			var color2 = new MeshLineMaterial({ color: new THREE.Color('black')});
+			var color3 = new MeshLineMaterial({ color: new THREE.Color('red')});
+			var color4 = new MeshLineMaterial({ color: new THREE.Color('aqua')});
+		    
+			// superior
+	        var p=ejemplo.length-1;
+		    var geo = new THREE.SphereGeometry(1, 10, 10);
+            var sphere = new THREE.Mesh(geo, color2);
+            sphere.position.set(x(ejemplo[p].x),z(tiempos.indexOf(ejemplo[p].Timestamp)),y(ejemplo[p].y));
+		    scene.add(sphere);
+			//inferior
+            var sphere = new THREE.Mesh(geo, color3);
+            sphere.position.set(x(ejemplo[0].x),z(tiempos.indexOf(ejemplo[0].Timestamp)),y(ejemplo[0].y));
+		    scene.add(sphere);
+			//estadias
+			ingreso.forEach( function(d) {
+				var sphere = new THREE.Mesh(geo, color4);
+                sphere.position.set(x(d.x),z(tiempos.indexOf(d.Timestamp)),y(d.y));
+		        scene.add(sphere);
+			});
+			var line = new MeshLine();
+			line.setGeometry(geometria)
+			eval("figura"+seleccionados[i]+"= new THREE.Mesh(line.geometry,color);");
+			//eval("figura"+ids[i]+"= new THREE.Line(geometria,color);");
+			eval("scene.add(figura"+seleccionados[i]+");");
+
+	}		
+}
+
+function renderSlider(){
+		$("#sli-container").rangeSlider({
+			bounds:{min: 0, max: tiempos.length -1 },
+			defaultValues:{min: tiempos.length * 0.2 , max: tiempos.length * 0.4},
+			formatter: function(val){
+				return tiempos[val];
+			},
+			step: 1,
+			scales: [
+			    // Escala principal
+				{
+					first: function(val){ return val; },
+					next: function(val){ return val + 30; },
+					stop: function(val){ return false; },
+					label: function(val){ return tiempos[val].substring(11,16);},
+					format: function(tickContainer, tickStart, tickEnd){ 
+						tickContainer.addClass("myCustomClass");
+					}
+				},
+				// Escala secundaria
+				{
+					first: function(val){ return val; },
+					next: function(val){  return val + 1; },
+					stop: function(val){ return false; },
+					label: function(){ return null; }
+				}
+			]
+						 
+		});
+		$("#sli-container").bind("valuesChanged", sliderChange);			
+}
+
+
+
+
+
+
+
+
+
+
+
+//###################################################################
+//#####                Sección preguntas                      #######
+//###################################################################
+	
+	var preguntas=['¿En qué lugar se encontraba la persona con id 1482663 a las 9:00? ',
+					'¿En qué lugar se encontraba la persona con id 1772261 a las 9:30? ',
+                    'En el horario de 8:30 a 8:45 seleccione los id 1932928 y 1482663 ¿en qué punto se atracción se encontraron?',
+					'En el horario de 8:30 a 8:45 seleccione los id 835642 y 544439 ¿se cruzaron en algún punto? ',
+					'¿Qué lugares visitó la segunda persona con id 766528? ',
+					'¿Por qué entrada ingresó la persona con id 398396? ',
+					'Seleccione las personas con id 2022703 y 1700834 ¿en qué atraccion estuvieron en el mismo horario?',
+					'Seleccione las personas con id 1547860 y 1269504 ¿cuál de los 2 entró primero al parque? '
+	];
+	
+	var milisegundos=0;
+	var control;
+	var texto=[];
+	var nombre;
+	var apellidos;
+	var min=0;
+	var max=1;
+	var cat=1;
+	var pregunta;
+	
+	function guardar(){
+	 var come = document.getElementById('come').value;
+	 texto.push(come+" \n");
+	 document.getElementById('come').value='';
+	 var contenidoEnBlob = new Blob(texto, {
+        type: 'text/plain'
+    });
+
+    var nombreArchivo = apellidos+" "+nombres+" 3D.txt";
+	var reader = new FileReader();
+    reader.onload = function (event) {
+        var save = document.createElement('a');
+        save.href = event.target.result;
+        save.target = '_blank';
+        save.download = nombreArchivo || 'archivo.dat';
+        var clicEvent = new MouseEvent('click', {
+            'view': window,
+                'bubbles': true,
+                'cancelable': true
+        });
+        save.dispatchEvent(clicEvent);
+        (window.URL || window.webkitURL).revokeObjectURL(save.href);
+    };
+    reader.readAsDataURL(contenidoEnBlob);
+	
+	}
+
+	function aleatorio(mi, ma) {
+     return Math.round(Math.random() * (ma - mi) + mi);
+   }
+	function empezar(){
+		nombres =document.getElementById("nombres").value;
+		apellidos =document.getElementById("apellidos").value;
+		var edad=document.getElementById("edad").value;
+		var sexo=document.querySelector('input[name="genero"]:checked').value;
+	
+		texto.push(nombres+", "+apellidos+", "+edad+" ,"+sexo+" \n");
+
+		//limpio los datos
+		document.getElementById("nombres").value="";
+		document.getElementById("apellidos").value="";
+		document.getElementById("edad").value="";
+		//*****************
+		var dat        = document.getElementById('datos');
+        var divPreguntas = document.getElementById('preguntas');
+		pregunta     = d3.select('p.pregunta');
+	    console.log(pregunta);
+		dat.style.display='none';
+		divPreguntas.style.display='block';
+		pregunta.text(preguntas[aleatorio(min,max)]);
+		min +=2;
+		max +=2;
+		control=setInterval(function(){ milisegundos+=10; }, 10);
+	}
+	
+	
+	function   quest(){
+	 clearInterval(control);
+	 var timeP=milisegundos;
+	 var p1 = document.getElementById('p1').value;
+	 p1.replace(',','|')
+     texto.push(cat+","+ p1+"," +timeP+" \n");
+	 console.log(cat+","+ p1+"," +timeP+"\n");
+	 //limpio los datos
+	 document.getElementById('p1').value="";
+	 pregunta.text(preguntas[aleatorio(min,max)]);
+	 min +=2;
+	 max +=2;
+	 cat++;
+	 if(cat == 5){
+	    d3.select("div#preguntas").style("display","none");
+		d3.select("div#com").style("display","block");
+	 }
+	 else{
+	   milisegundos=0;
+	  control=setInterval(function(){ milisegundos+=10; }, 10);
+	 }
+
+	}
+	
+
+</script>
+</body>
+</html>
